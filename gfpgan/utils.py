@@ -116,21 +116,55 @@ class GFPGANer():
 
         # face restoration
         for cropped_face in self.face_helper.cropped_faces:
-            # prepare data
-            cropped_face_t = img2tensor(cropped_face / 255., bgr2rgb=True, float32=True)
-            normalize(cropped_face_t, (0.5, 0.5, 0.5), (0.5, 0.5, 0.5), inplace=True)
-            cropped_face_t = cropped_face_t.unsqueeze(0).to(self.device)
+            if app:
+                frame_faces_img = app.get(cropped_face)
+                face_to_replace = None
+                max_similarity = -9999
+                embedding_with_max_similarity = None
+                for i, face in enumerate(frame_faces_img):
+                    current_face_embedding = face.normed_embedding
+                    for embedding_to_swap in embeddings_to_swap:
+                        similarity = 1 - cosine(current_face_embedding, embedding_to_swap)
+                        if similarity >= cosine_threshold and similarity > max_similarity:
+                            max_similarity = similarity
+                            embedding_with_max_similarity = current_face_embedding
+                            face_to_replace = face
+                if face_to_replace != None:
+                    # prepare data
+                    cropped_face_t = img2tensor(cropped_face / 255., bgr2rgb=True, float32=True)
+                    normalize(cropped_face_t, (0.5, 0.5, 0.5), (0.5, 0.5, 0.5), inplace=True)
+                    cropped_face_t = cropped_face_t.unsqueeze(0).to(self.device)
 
-            try:
-                output = self.gfpgan(cropped_face_t, return_rgb=False, weight=weight)[0]
-                # convert to image
-                restored_face = tensor2img(output.squeeze(0), rgb2bgr=True, min_max=(-1, 1))
-            except RuntimeError as error:
-                print(f'\tFailed inference for GFPGAN: {error}.')
-                restored_face = cropped_face
+                    try:
+                        output = self.gfpgan(cropped_face_t, return_rgb=False, weight=weight)[0]
+                        # convert to image
+                        restored_face = tensor2img(output.squeeze(0), rgb2bgr=True, min_max=(-1, 1))
+                    except RuntimeError as error:
+                        print(f'\tFailed inference for GFPGAN: {error}.')
+                        restored_face = cropped_face
 
-            restored_face = restored_face.astype('uint8')
-            self.face_helper.add_restored_face(restored_face)
+                    restored_face = restored_face.astype('uint8')
+                    self.face_helper.add_restored_face(restored_face)
+                else:
+                    restored_face = cropped_face
+                    restored_face = restored_face.astype('uint8')
+                    self.face_helper.add_restored_face(restored_face)
+            else:
+                # prepare data
+                cropped_face_t = img2tensor(cropped_face / 255., bgr2rgb=True, float32=True)
+                normalize(cropped_face_t, (0.5, 0.5, 0.5), (0.5, 0.5, 0.5), inplace=True)
+                cropped_face_t = cropped_face_t.unsqueeze(0).to(self.device)
+
+                try:
+                    output = self.gfpgan(cropped_face_t, return_rgb=False, weight=weight)[0]
+                    # convert to image
+                    restored_face = tensor2img(output.squeeze(0), rgb2bgr=True, min_max=(-1, 1))
+                except RuntimeError as error:
+                    print(f'\tFailed inference for GFPGAN: {error}.')
+                    restored_face = cropped_face
+
+                restored_face = restored_face.astype('uint8')
+                self.face_helper.add_restored_face(restored_face)
 
         if not has_aligned and paste_back:
             # upsample the background
